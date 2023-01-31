@@ -22,7 +22,9 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     chatGPT = ChatGPT.instance;
-    sendMessage(isInitial: true)
+    WidgetsFlutterBinding.ensureInitialized().addPostFrameCallback((timeStamp) {
+      sendMessage(isInitial: true);
+    });
     super.initState();
   }
 
@@ -39,7 +41,7 @@ class _ChatScreenState extends State<ChatScreen> {
           child: TextField(
             controller: controller,
             decoration: InputDecoration.collapsed(hintText: "Send a Message"),
-            onSubmitted: (value) => sendMessage(),
+            // onSubmitted: (value) => sendMessage(),
           ),
         ),
         IconButton(
@@ -51,32 +53,55 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void sendMessage({isInitial = false}) {
-    Dio dio = Dio();
-    dio.options.connectTimeout = 8000;
     ChatMessage message = (isInitial)
         ? ChatMessage(
             text: "controller.text",
             sender: "user",
             isVisible: false,
           )
-        : ChatMessage(text: controller.text, sender: "user");
+        : ChatMessage(text: controller.text.trim(), sender: "user");
     setState(() {
       _messages.insert(0, message);
       if (!isInitial) {
         isTyping = true;
       }
     });
-
     controller.clear();
 
     final request = CompleteReq(
         prompt: message.text, model: kTranslateModelV3, max_tokens: 200);
 
     _subscription = chatGPT!
-        .builder("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",
-            orgId: "")
+        .builder("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",
+            orgId: "",
+            baseOption: HttpSetup(receiveTimeout: 60000, connectTimeout: 60000))
         .onCompleteStream(request: request)
-        .listen((response) {
+        .handleError((error) {
+      ChatMessage botMessage = ChatMessage(
+        text: "${error}",
+        sender: "bot",
+      );
+      setState(() {
+        _messages.insert(0, botMessage);
+        if (!isInitial) {
+          isTyping = false;
+        }
+      });
+    }).timeout(
+      Duration(seconds: 60),
+      onTimeout: (sink) {
+        ChatMessage botMessage = ChatMessage(
+          text: "${sink.toString()}",
+          sender: "bot",
+        );
+        setState(() {
+          _messages.insert(0, botMessage);
+          if (!isInitial) {
+            isTyping = false;
+          }
+        });
+      },
+    ).listen((response) {
       Vx.log(response!.choices[0].text);
       ChatMessage botMessage = ChatMessage(
         text: response.choices[0].text,
